@@ -116,12 +116,12 @@ if [[ -z "${HEAD_CX7_IP}" ]]; then
 fi
 log "Head node CX7 IP (master-addr): ${HEAD_CX7_IP}"
 
-# ── SSH user and worker IPs ───────────────────────────────────────────────────
-# Ring setup already configured passwordless SSH and CX7 IPs — just need
-# the username and the management IPs of the other two nodes.
+# ── Worker IPs ───────────────────────────────────────────────────────────────
+# Ring setup configured passwordless SSH for the same user on all nodes,
+# so the current $USER is the correct SSH username on all nodes.
+SSH_USER="${USER}"
+log "SSH user: ${SSH_USER}"
 echo ""
-read -r -p "SSH username for all nodes: " SSH_USER
-[[ -n "${SSH_USER}" ]] || die "Username cannot be empty."
 read -r -p "Node 2 management IP or hostname: " WORKER1_IP
 read -r -p "Node 3 management IP or hostname: " WORKER2_IP
 for ip in "${WORKER1_IP}" "${WORKER2_IP}"; do
@@ -134,7 +134,7 @@ log "Workers: ${WORKER_MGMT_IPS[*]}"
 log "Verifying passwordless SSH to worker nodes..."
 for ip in "${WORKER_MGMT_IPS[@]}"; do
     timeout 10 remote_run "${SSH_USER}" "${ip}" true 2>/dev/null \
-        || die "Passwordless SSH to ${SSH_USER}@${ip} failed. Run setup-spark-ring.sh first."
+        || die "Passwordless SSH to ${SSH_USER}@${ip} failed. Ensure setup-spark-ring.sh has been run and you are logged in as the cluster user."
     log "  ✓ ${ip}"
 done
 
