@@ -2,6 +2,8 @@
 
 Automated setup scripts for a three-node DGX Spark ring cluster, including network configuration and distributed vLLM inference.
 
+Use <https://github.com/eugr/spark-vllm-docker> after running `setup-spark-ring.sh` to deploy a distributed vLLM inference server across all three nodes. The `scripts/setup-vllm.sh` is our own attempt, but the vLLM Docker scripts are more robust and better maintained.
+
 ## Prerequisites
 
 - Three DGX Spark nodes physically connected in a ring topology via QSFP cables
@@ -70,5 +72,6 @@ The vLLM API is served on the head node at `http://localhost:8000/v1`.
 ## References
 
 - [Connect three DGX Sparks in a ring topology](https://build.nvidia.com/spark/connect-three-sparks/three-sparks-ring)
-- [vLLM on multiple Sparks through a switch](https://build.nvidia.com/spark/vllm/multi-sparks-through-switch)
+<!-- - [vLLM on multiple Sparks through a switch](https://build.nvidia.com/spark/vllm/multi-sparks-through-switch) -->
 - [NVIDIA dgx-spark-playbooks](https://github.com/NVIDIA/dgx-spark-playbooks)
+- [vLLM docker scripts](https://github.com/eugr/spark-vllm-docker)
