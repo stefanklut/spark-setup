@@ -9,16 +9,13 @@
 #   - Ring network already configured (run setup-spark-ring.sh first)
 #   - Passwordless SSH between all nodes (set up by setup-spark-ring.sh)
 #   - Docker installed; user in the docker group on all nodes
-#   - ibdev2netdev, avahi-browse, ssh
+#   - ibdev2netdev, ssh
 #
 # Usage: bash setup-vllm.sh
 
 set -euo pipefail
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-# Hostname prefix used to identify DGX Sparks via mDNS discovery.
-SPARK_HOSTNAME_PREFIX="gx10-"
-
 # NVIDIA vLLM container image — check https://catalog.ngc.nvidia.com/orgs/nvidia/containers/vllm
 VLLM_IMAGE="nvcr.io/nvidia/vllm:26.02-py3"
 
@@ -91,7 +88,7 @@ log "=== Phase 1: Prerequisites & Node Discovery ==="
 grep -q 'DGX_NAME="DGX Spark"' /etc/dgx-release 2>/dev/null \
     || die "DGX_NAME is not 'DGX Spark'. This script must be run on a DGX Spark."
 
-for tool in ibdev2netdev avahi-browse ssh docker; do
+for tool in ibdev2netdev ssh docker; do
     check_command "${tool}"
 done
 
@@ -119,58 +116,19 @@ if [[ -z "${HEAD_CX7_IP}" ]]; then
 fi
 log "Head node CX7 IP (master-addr): ${HEAD_CX7_IP}"
 
-# ── SSH user ──────────────────────────────────────────────────────────────────
+# ── SSH user and worker IPs ───────────────────────────────────────────────────
+# Ring setup already configured passwordless SSH and CX7 IPs — just need
+# the username and the management IPs of the other two nodes.
 echo ""
 read -r -p "SSH username for all nodes: " SSH_USER
 [[ -n "${SSH_USER}" ]] || die "Username cannot be empty."
-
-# ── Discover management IPs of all 3 Sparks ───────────────────────────────────
-log "Discovering Sparks with hostname prefix '${SPARK_HOSTNAME_PREFIX}' via mDNS..."
-
-# All CX7 interface names (UP or not) — exclude from avahi results so only
-# management IPs are returned
-CX7_ALL_IFACES=$(ibdev2netdev | awk '{print $5}' | tr '\n' ',')
-
-# avahi-browse parseable format: =;iface;IPv4;name;_ssh._tcp;local;fqdn;ip;port;"txt"
-# Skip entries on CX7 interfaces ($2) to get management-network IPs only
-mapfile -t DISCOVERED_IPS < <(
-    avahi-browse -p -r -f -t _ssh._tcp 2>/dev/null \
-        | awk -F';' -v prefix="${SPARK_HOSTNAME_PREFIX}" -v cx7="${CX7_ALL_IFACES}" \
-            'BEGIN { n=split(cx7,a,","); for(i=1;i<=n;i++) skip[a[i]]=1 }
-             $1=="=" && $3=="IPv4" && !skip[$2] && $7 ~ "^" prefix { print $8 }' \
-        | sort -u
-)
-
-ALL_NODE_IPS=()
-if [[ ${#DISCOVERED_IPS[@]} -eq 3 ]]; then
-    log "Discovered 3 Spark nodes: ${DISCOVERED_IPS[*]}"
-    ALL_NODE_IPS=("${DISCOVERED_IPS[@]}")
-else
-    if [[ ${#DISCOVERED_IPS[@]} -eq 0 ]]; then
-        warn "mDNS found no nodes with prefix '${SPARK_HOSTNAME_PREFIX}'."
-    else
-        warn "mDNS found ${#DISCOVERED_IPS[@]} node(s) (expected 3): ${DISCOVERED_IPS[*]}"
-    fi
-    warn "Falling back to manual entry."
-    LOCAL_MGMT_IP=$(ip route get 8.8.8.8 2>/dev/null \
-        | awk 'NR==1 { for(i=1;i<=NF;i++) if($i=="src") print $(i+1) }')
-    echo ""
-    echo "Enter the management IP addresses of all three Sparks:"
-    read -r -p "  Node 1 (head, this node) [${LOCAL_MGMT_IP}]: " NODE1_IP
-    read -r -p "  Node 2 IP: " NODE2_IP
-    read -r -p "  Node 3 IP: " NODE3_IP
-    NODE1_IP="${NODE1_IP:-${LOCAL_MGMT_IP}}"
-    for ip in "${NODE1_IP}" "${NODE2_IP}" "${NODE3_IP}"; do
-        [[ -n "${ip}" ]] || die "IP address cannot be empty."
-        [[ "${ip}" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] \
-            || die "Invalid IP address: '${ip}'"
-    done
-    ALL_NODE_IPS=("${NODE1_IP}" "${NODE2_IP}" "${NODE3_IP}")
-fi
-
-WORKER_MGMT_IPS=("${ALL_NODE_IPS[@]:1}")
-log "Head management IP: ${ALL_NODE_IPS[0]}"
-log "Worker management IPs: ${WORKER_MGMT_IPS[*]}"
+read -r -p "Node 2 management IP or hostname: " WORKER1_IP
+read -r -p "Node 3 management IP or hostname: " WORKER2_IP
+for ip in "${WORKER1_IP}" "${WORKER2_IP}"; do
+    [[ -n "${ip}" ]] || die "IP/hostname cannot be empty."
+done
+WORKER_MGMT_IPS=("${WORKER1_IP}" "${WORKER2_IP}")
+log "Workers: ${WORKER_MGMT_IPS[*]}"
 
 # ── Verify passwordless SSH to workers ────────────────────────────────────────
 log "Verifying passwordless SSH to worker nodes..."
