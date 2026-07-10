@@ -19,6 +19,9 @@ set -euo pipefail
 # NVIDIA vLLM container image — check https://catalog.ngc.nvidia.com/orgs/nvidia/containers/vllm
 VLLM_IMAGE="nvcr.io/nvidia/vllm:26.02-py3"
 
+# Hostname prefix used to identify DGX Sparks via mDNS discovery.
+SPARK_HOSTNAME_PREFIX="gx10-"
+
 # Model to serve
 MODEL="Qwen/Qwen3.6-27B"
 
@@ -88,7 +91,7 @@ log "=== Phase 1: Prerequisites & Node Discovery ==="
 grep -q 'DGX_NAME="DGX Spark"' /etc/dgx-release 2>/dev/null \
     || die "DGX_NAME is not 'DGX Spark'. This script must be run on a DGX Spark."
 
-for tool in ibdev2netdev ssh docker; do
+for tool in ibdev2netdev avahi-browse ssh docker; do
     check_command "${tool}"
 done
 
@@ -116,19 +119,49 @@ if [[ -z "${HEAD_CX7_IP}" ]]; then
 fi
 log "Head node CX7 IP (master-addr): ${HEAD_CX7_IP}"
 
-# ── Worker IPs ───────────────────────────────────────────────────────────────
+# ── Worker IPs via mDNS ──────────────────────────────────────────────────────
+# All CX7 interface names — excluded from avahi results so only management IPs
+# are returned (avahi-browse sees every interface including CX7 ring ones).
+CX7_ALL_IFACES=$(ibdev2netdev | awk '{print $5}' | tr '\n' ',')
+
+log "Discovering worker nodes with prefix '${SPARK_HOSTNAME_PREFIX}' via mDNS..."
+mapfile -t DISCOVERED_IPS < <(
+    avahi-browse -p -r -f -t _ssh._tcp 2>/dev/null \
+        | awk -F';' -v prefix="${SPARK_HOSTNAME_PREFIX}" -v cx7="${CX7_ALL_IFACES}" \
+            'BEGIN { n=split(cx7,a,","); for(i=1;i<=n;i++) skip[a[i]]=1 }
+             $1=="=" && $3=="IPv4" && !skip[$2] && $7 ~ "^" prefix { print $8 }' \
+        | sort -u
+)
+
+WORKER_MGMT_IPS=()
+if [[ ${#DISCOVERED_IPS[@]} -eq 3 ]]; then
+    # Remove this node's own CX7 IP from the list to get only the two workers
+    for ip in "${DISCOVERED_IPS[@]}"; do
+        [[ "${ip}" != "${HEAD_CX7_IP}" ]] && WORKER_MGMT_IPS+=("${ip}")
+    done
+fi
+
+if [[ ${#WORKER_MGMT_IPS[@]} -ne 2 ]]; then
+    if [[ ${#DISCOVERED_IPS[@]} -eq 0 ]]; then
+        warn "mDNS found no nodes with prefix '${SPARK_HOSTNAME_PREFIX}'. Falling back to manual entry."
+    else
+        warn "mDNS found ${#DISCOVERED_IPS[@]} node(s): ${DISCOVERED_IPS[*]}. Falling back to manual entry."
+    fi
+    echo ""
+    read -r -p "Node 2 management IP or hostname: " WORKER1_IP
+    read -r -p "Node 3 management IP or hostname: " WORKER2_IP
+    for ip in "${WORKER1_IP}" "${WORKER2_IP}"; do
+        [[ -n "${ip}" ]] || die "IP/hostname cannot be empty."
+    done
+    WORKER_MGMT_IPS=("${WORKER1_IP}" "${WORKER2_IP}")
+fi
+
+log "Workers: ${WORKER_MGMT_IPS[*]}"
+
 # Ring setup configured passwordless SSH for the same user on all nodes,
 # so the current $USER is the correct SSH username on all nodes.
 SSH_USER="${USER}"
 log "SSH user: ${SSH_USER}"
-echo ""
-read -r -p "Node 2 management IP or hostname: " WORKER1_IP
-read -r -p "Node 3 management IP or hostname: " WORKER2_IP
-for ip in "${WORKER1_IP}" "${WORKER2_IP}"; do
-    [[ -n "${ip}" ]] || die "IP/hostname cannot be empty."
-done
-WORKER_MGMT_IPS=("${WORKER1_IP}" "${WORKER2_IP}")
-log "Workers: ${WORKER_MGMT_IPS[*]}"
 
 # ── Verify passwordless SSH to workers ────────────────────────────────────────
 log "Verifying passwordless SSH to worker nodes..."
