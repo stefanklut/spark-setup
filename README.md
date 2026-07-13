@@ -4,6 +4,13 @@ Automated setup scripts for a three-node DGX Spark ring cluster, including netwo
 
 Use <https://github.com/eugr/spark-vllm-docker> after running `setup-spark-ring.sh` to deploy a distributed vLLM inference server across all three nodes. The `scripts/setup-vllm.sh` is our own attempt, but the vLLM Docker scripts are more robust and better maintained.
 
+## Encountered problems
+
+Some issues we encountered while setting up the three-node Spark ring cluster:
+
+- The cable order is really important. If the ring is not connected properly, the NCCL bandwidth test will fail. It should be connected for the left port of each node to the right port of the next node in the ring. The order of the nodes in the ring is not important, but the cable order is.
+- Use the IP that is in the config for HEAD_NODE_IP (Not the $VLLM_HOST_IP). This is no longer a problem with the eugr/spark-vllm-docker scripts, but it was a problem with our own `setup-vllm.sh` script.
+
 ## Prerequisites
 
 - Three DGX Spark nodes physically connected in a ring topology via QSFP cables
@@ -52,9 +59,7 @@ Deploys a distributed vLLM inference server across all three nodes. Run after `s
 8. Polls the `/health` endpoint until the server is ready, then runs a smoke test
 
 ```bash
-bash scripts/setup-vllm.shEncountered problems:
- - Cables need to be in a very specific order
- - Use IP that is in the config for HEAD_NODE_IP (Not the $VLLM_HOST_IP)
+bash scripts/setup-vllm.sh
 ```
 
 The vLLM API is served on the head node at `http://localhost:8000/v1`.
