@@ -1,0 +1,37 @@
+# Recipe: DeepSeek V4 Flash 0731 (3-spark)
+# DeepSeek V4 Flash on a 3-node mesh
+# Runs in data-parallel mode with expert parallelism across three sparks.
+
+recipe_version: "1"
+name: DeepSeek-V4-Flash-0731 (DP=3)
+description: vLLM serving deepseek-ai/DeepSeek-V4-Flash-0731 on a 3-node mesh
+
+model: deepseek-ai/DeepSeek-V4-Flash-0731
+container: vllm-node
+
+cluster_only: true
+
+defaults:
+  port: 8000
+  host: 0.0.0.0
+  data_parallel: 3
+  gpu_memory_utilization: 0.85
+
+command: |
+  vllm serve deepseek-ai/DeepSeek-V4-Flash-0731 \
+      --host {host} \
+      --port {port} \
+      --gpu-memory-utilization {gpu_memory_utilization} \
+      --trust-remote-code \
+      --kv-cache-dtype fp8 \
+      --enable-expert-parallel \
+      --data-parallel-size {data_parallel} \
+      --compilation-config '{{"cudagraph_mode":"FULL_AND_PIECEWISE", "custom_ops":["all"]}}' \
+      --tokenizer-mode deepseek_v4 \
+      --tool-call-parser deepseek_v4 \
+      --enable-auto-tool-choice \
+      --reasoning-parser deepseek_v4 \
+      --reasoning-config '{{"reasoning_parser":"deepseek_v4","reasoning_start_str":"","reasoning_end_str":""}}' \
+      --default-chat-template-kwargs.thinking=true \
+      --default-chat-template-kwargs.reasoning_effort=high \
+      --load-format instanttensor

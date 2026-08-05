@@ -1,0 +1,52 @@
+# Recipe: nvidia/Qwen3.5-397B-A17B-NVFP4 (PP=3)
+# Qwen3.5-397B model in NVIDIA NVFP4 quantization, ModelOpt
+# Runs on 3-node mesh in pipeline-parallel mode with expert parallelism.
+
+recipe_version: "1"
+name: nvidia/Qwen3.5-397B-A17B-NVFP4 (PP=3)
+description: Recipe for nvidia/Qwen3.5-397B-A17B-NVFP4 to run on 3-node mesh in pipeline-parallel mode
+
+# HuggingFace model to download (optional, for --download-model)
+model: nvidia/Qwen3.5-397B-A17B-NVFP4
+
+cluster_only: true
+
+# Container image to use
+container: vllm-node
+
+mods:
+  - mods/fix-qwen3.5-chat-template
+
+# Default settings (can be overridden via CLI)
+defaults:
+  port: 8000
+  host: 0.0.0.0
+  pipeline_parallel: 3
+  gpu_memory_utilization: 0.9
+  max_model_len: 262144
+
+# Environment variables
+env: 
+  VLLM_MARLIN_USE_ATOMIC_ADD: 1
+
+# The vLLM serve command template
+command: |
+  vllm serve nvidia/Qwen3.5-397B-A17B-NVFP4 \
+    --host {host} \
+    --port {port} \
+    --gpu-memory-utilization {gpu_memory_utilization} \
+    --pipeline-parallel-size {pipeline_parallel} \
+    --max-model-len {max_model_len} \
+    --quantization modelopt \
+    --reasoning-parser qwen3 \
+    --tool-call-parser qwen3_coder \
+    --enable-auto-tool-choice \
+    --kv-cache-dtype fp8 \
+    --mm-encoder-tp-mode data \
+    --enable-expert-parallel \
+    --enable-prefix-caching \
+    --trust-remote-code \
+    --load-format instanttensor \
+    --language-model-only
+
+  
