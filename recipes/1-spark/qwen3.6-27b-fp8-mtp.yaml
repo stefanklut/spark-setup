@@ -1,0 +1,46 @@
+# Recipe: Qwen3.6-27B-FP8-MTP
+# Qwen3.6-27B model in native FP8 format with MTP speculative decoding.
+
+recipe_version: "1"
+name: Qwen3.6-27B-FP8-MTP
+description: vLLM serving Qwen/Qwen3.6-27B-FP8 with MTP speculative decoding
+
+# HuggingFace model to download (optional, for --download-model)
+model: Qwen/Qwen3.6-27B-FP8
+
+solo_only: true
+
+# Container image to use
+container: vllm-node
+
+# Default settings (can be overridden via CLI)
+defaults:
+  port: 8000
+  host: 0.0.0.0
+  tensor_parallel: 1
+  gpu_memory_utilization: 0.9
+  max_model_len: 262144
+  max_num_seqs: 4
+  max_num_batched_tokens: 8192
+
+# The vLLM serve command template
+command: |
+  vllm serve Qwen/Qwen3.6-27B-FP8 \
+    --host {host} \
+    --port {port} \
+    --tensor-parallel-size {tensor_parallel} \
+    --trust-remote-code \
+    --kv-cache-dtype fp8 \
+    --attention-backend flashinfer \
+    --gpu-memory-utilization {gpu_memory_utilization} \
+    --max-model-len {max_model_len} \
+    --max-num-seqs {max_num_seqs} \
+    --max-num-batched-tokens {max_num_batched_tokens} \
+    --enable-chunked-prefill \
+    --async-scheduling \
+    --enable-prefix-caching \
+    --speculative-config '{{"method":"mtp","num_speculative_tokens":5,"moe_backend":"triton"}}' \
+    --load-format instanttensor \
+    --reasoning-parser qwen3 \
+    --tool-call-parser qwen3_coder \
+    --enable-auto-tool-choice
